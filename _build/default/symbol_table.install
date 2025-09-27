@@ -1,0 +1,8 @@
+lib: [
+  "_build/install/default/lib/symbol_table/META"
+  "_build/install/default/lib/symbol_table/dune-package"
+  "_build/install/default/lib/symbol_table/opam"
+]
+bin: [
+  "_build/install/default/bin/symbol_table"
+]

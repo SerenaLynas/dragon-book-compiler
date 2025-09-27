@@ -1,0 +1,4 @@
+(executable
+ (public_name symbol_table)
+ (name main)
+ (libraries symbol_table))
