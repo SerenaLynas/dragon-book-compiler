@@ -1,15 +1,26 @@
 {
-  open Printf
+  type basic =
+    | INT
+    | FLOAT
+    | BOOLEAN
 
-  type token =
-    | BASIC
-    | KEYWORD
-    | ID
-    | PUNCT
-    | NUM
-    | REAL
-    | CHAR
-    | WS
+  (* This corresponds to both the Return Value and yyval *)
+  (* The variant is the Return Value and yyval is in the associated data *)
+  (* OCaml has no concept of NULL, this is how you would do it. *)   
+  type tok =
+    | IF
+    | THEN
+    | ELSE
+    | WHILE
+    | DO
+    | BREAK
+    | CHAR of char
+    | OP of string
+    | BASIC of basic
+    | ID of string
+    | NUM of int
+    | REAL of float (* this is a double *)
+    | BOOLEAN of bool
     | EOF
 }
 
@@ -24,22 +35,29 @@ let num = digit+
 let real = digit+ ('.' digit)? ('E' ['+' '-']? digit+)?
 
 rule program = parse
-  | ws as word
-    { (WS, word) }
+  | ws
+    { None }
   | basic as word
-    { (BASIC, word) }
-  | "if"
-  | "else"
-  | "while"
-  | "do"
-  | "break" as word
-    { (KEYWORD, word) }
+    {
+      match word with
+      | "int" -> Some (BASIC INT)
+      | "float" -> Some (BASIC FLOAT)
+      | "boolean" -> Some (BASIC BOOLEAN)
+      | _ -> None (*Unreachable*)
+    }
+  | "if"    { Some IF }
+  | "else"  { Some ELSE }
+  | "while" { Some WHILE }
+  | "do"    { Some DO }
+  | "break" { Some BREAK }
+  | "true"  { Some (BOOLEAN true) }
+  | "false" { Some (BOOLEAN false) }
   | id as word
-    { (ID, word)}
+    { Some (ID word) }
   | num as word
-    { (NUM, word)}
+    { Some (NUM (int_of_string word)) }
   | real as word
-    { (REAL, word) }
+    { Some (REAL (Float.of_string word)) }
   | "&&"
   | "=="
   | "!="
@@ -51,27 +69,20 @@ rule program = parse
   | "-"
   | "*"
   | "/"
-  | "!"
-  | "("
-  | ")"
-  | "["
-  | "]"
-  | "{"
-  | "}" as word
-    { (PUNCT, word) }
+  | "!" as word
+    { Some (OP word) }
   | _ as c
-    { (CHAR, String.make 1 c) }
-  | eof as word
-    { (EOF, word) }
+    { Some (CHAR c) }
+  | eof
+    { Some EOF }
 
 {
-  let rec parse lexbuf =
-    let (ty, word) = program lexbuf in
-      if ty != WS then printf "%s " word;
-      if ty != EOF then parse lexbuf
-
-  let main () =
-    let lexbuf = Lexing.from_channel stdin in parse lexbuf
-
-  let () = main ()
+  let rec parse lexbuf fn =
+    let tok = program lexbuf in
+      if tok != Some EOF then (
+        (match tok with
+        | Some tok -> fn tok
+        | None -> ());
+        parse lexbuf fn;
+      )
 }
