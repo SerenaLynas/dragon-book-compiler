@@ -59,6 +59,7 @@ rule program = parse
   | real as word
     { Some (REAL (Float.of_string word)) }
   | "&&"
+  | "||"
   | "=="
   | "!="
   | "<"
