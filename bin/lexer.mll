@@ -30,34 +30,28 @@ let letter = ['A' - 'Z' 'a' - 'z']
 let digit = ['0' - '9']
 
 let id = ['a' - 'z' 'A' - 'Z'] ['a' - 'z' 'A' - 'Z' '0' - '9']*
-let basic = "int" | "float" | "boolean"
 let num = digit+
 let real = digit+ ('.' digit)? ('E' ['+' '-']? digit+)?
 
 rule program = parse
   | ws
-    { None }
-  | basic as word
-    {
-      match word with
-      | "int" -> Some (BASIC INT)
-      | "float" -> Some (BASIC FLOAT)
-      | "boolean" -> Some (BASIC BOOLEAN)
-      | _ -> None (*Unreachable*)
-    }
-  | "if"    { Some IF }
-  | "else"  { Some ELSE }
-  | "while" { Some WHILE }
-  | "do"    { Some DO }
-  | "break" { Some BREAK }
-  | "true"  { Some (BOOLEAN true) }
-  | "false" { Some (BOOLEAN false) }
+    { program lexbuf }
+  | "int" { BASIC INT }
+  | "float" { BASIC FLOAT }
+  | "boolean" { BASIC BOOLEAN }
+  | "if"    { IF }
+  | "else"  { ELSE }
+  | "while" { WHILE }
+  | "do"    { DO }
+  | "break" { BREAK }
+  | "true"  { BOOLEAN true }
+  | "false" { BOOLEAN false }
   | id as word
-    { Some (ID word) }
+    { ID word }
   | num as word
-    { Some (NUM (int_of_string word)) }
+    { NUM (int_of_string word) }
   | real as word
-    { Some (REAL (Float.of_string word)) }
+    { REAL (Float.of_string word) }
   | "&&"
   | "||"
   | "=="
@@ -71,19 +65,17 @@ rule program = parse
   | "*"
   | "/"
   | "!" as word
-    { Some (OP word) }
+    { OP word }
   | _ as c
-    { Some (CHAR c) }
+    { CHAR c }
   | eof
-    { Some EOF }
+    { EOF }
 
 {
   let rec parse lexbuf fn =
     let tok = program lexbuf in
-      if tok != Some EOF then (
-        (match tok with
-        | Some tok -> fn tok
-        | None -> ());
+      if tok != EOF then (
+        fn tok;
         parse lexbuf fn;
       )
 }
