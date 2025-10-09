@@ -1,8 +1,4 @@
-(menhir
- (modules parser))
-
-(ocamllex lexer)
-
 (executable
  (public_name main)
- (name main))
+ (name main)
+ (libraries compiler_lib))

@@ -1,4 +1,4 @@
-open Lexer
+open compiler_lib.Lexer
 
 class env (prev: env option) =
   object
@@ -51,5 +51,3 @@ let lexbuf = Lexing.from_channel (open_in Sys.argv.(1))
 let _ = parse lexbuf handle_tok;
 
 Printf.printf "\n\nParsing completed successfully.\n\n";
-
-table#print

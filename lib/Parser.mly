@@ -1,10 +1,5 @@
 %{
-    type basic =
-        | INT
-        | FLOAT
-        | BOOLEAN
-
-    open Printf
+  open Printf
 %}
 
 (* This corresponds to both the Return Value and yyval *)
@@ -17,7 +12,7 @@
 %token DO "do"
 %token BREAK "break"
 %token <string> OP
-%token <Parser.basic> BASIC
+%token <TokenTypes.basic> BASIC
 %token <string> ID
 %token <int> NUM
 %token <float> REAL

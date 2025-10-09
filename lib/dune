@@ -1,2 +1,7 @@
+(ocamllex Lexer)
+
+(menhir
+ (modules Parser))
+
 (library
- (name symbol_table))
+ (name compiler_lib))
