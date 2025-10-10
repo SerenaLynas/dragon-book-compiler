@@ -1,7 +1,10 @@
 (ocamllex Lexer)
 
+(env (dev (flags (:standard -warn-error -A))))
+
 (menhir
- (modules Parser))
+ (modules Parser)
+ (flags --code-ancient --strategy legacy))
 
 (library
  (name compiler_lib))

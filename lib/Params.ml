@@ -1,0 +1,1 @@
+let errcount = ref 0;

@@ -2,7 +2,7 @@
   open Parser
 }
 
-let delim = [' ' '\t' '\n' '\r']
+let delim = [' ' '\t' '\r']
 let ws = delim+
 let letter = ['A' - 'Z' 'a' - 'z']
 let digit = ['0' - '9']
@@ -12,47 +12,66 @@ let num = digit+
 let real = digit+ ('.' digit)? ('E' ['+' '-']? digit+)?
 
 rule program = parse
+  | '\n'
+    { Lexing.new_line lexbuf; program lexbuf }
   | ws
     { program lexbuf }
-  | "int" { BASIC INT }
-  | "float" { BASIC FLOAT }
-  | "boolean" { BASIC BOOLEAN }
   | "if"    { IF }
   | "else"  { ELSE }
   | "while" { WHILE }
   | "do"    { DO }
   | "break" { BREAK }
-  | "true"  { TRUE }
-  | "false" { FALSE }
+
+  | "int" { BASIC INT }
+  | "float" { BASIC FLOAT }
+  | "boolean" { BASIC BOOLEAN }
+
   | id as word
     { ID word }
   | num as word
     { NUM (int_of_string word) }
   | real as word
     { REAL (Float.of_string word) }
-  | "&&" { AND }
-  | "||" { OR }
+
+  | "{" { LBRACE }
+  | "}" { RBRACE }
+  | "[" { LBRACK }
+  | "]" { RBRACK }
+  | "(" { LPAREN }
+  | ")" { RPAREN }
+  | ";" { SEMICOLON }
+
+  | "=" { ASSIGN }
+  
+  | "!"  { BANG }
   | "==" { EQ }
   | "!=" { NEQ }
   | "<"  { LT }
   | "<=" { LTEQ }
   | ">=" { GTEQ }
   | ">"  { GT }
+  | "&&" { AND }
+  | "||" { OR }
+
   | "+"  { ADD }
   | "-"  { SUB }
   | "*"  { MUL }
   | "/"  { DIV }
-  | "!"  { BANG }
-  | _ as c
-    { CHAR c }
+
+  | "true"  { TRUE }
+  | "false" { FALSE }
+
+  | _ as c { ERR (UNKNOWN_CHAR c) }
   | eof
     { EOF }
 
 {
-  let rec parse lexbuf fn =
+  let lex lexbuf = program lexbuf;;
+
+  let rec lex_all lexbuf fn =
     let tok = program lexbuf in
       if tok != EOF then (
         fn tok;
-        parse lexbuf fn;
+        lex_all lexbuf fn;
       )
 }
