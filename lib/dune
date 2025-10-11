@@ -4,7 +4,7 @@
 
 (menhir
  (modules Parser)
- (flags --code-ancient --strategy legacy))
+ (flags --code-ancient --strategy legacy --unused-tokens))
 
 (library
  (name compiler_lib))

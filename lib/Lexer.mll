@@ -2,8 +2,7 @@
   open Parser
 }
 
-let delim = [' ' '\t' '\r']
-let ws = delim+
+let ws = [' ' '\t' '\r']
 let letter = ['A' - 'Z' 'a' - 'z']
 let digit = ['0' - '9']
 
@@ -15,12 +14,17 @@ rule program = parse
   | '\n'
     { Lexing.new_line lexbuf; program lexbuf }
   | ws
-    { program lexbuf }
+    {
+      program lexbuf
+    }
   | "if"    { IF }
   | "else"  { ELSE }
   | "while" { WHILE }
   | "do"    { DO }
   | "break" { BREAK }
+
+  | "true"  { TRUE }
+  | "false" { FALSE }
 
   | "int" { BASIC INT }
   | "float" { BASIC FLOAT }
@@ -57,9 +61,6 @@ rule program = parse
   | "-"  { SUB }
   | "*"  { MUL }
   | "/"  { DIV }
-
-  | "true"  { TRUE }
-  | "false" { FALSE }
 
   | _ as c { ERR (UNKNOWN_CHAR c) }
   | eof

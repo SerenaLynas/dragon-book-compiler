@@ -3,7 +3,6 @@
   (* OCaml has no concept of NULL, this is how you would do it. *)   
 %token IF "if"
 %nonassoc IF
-%token THEN "then"
 %token ELSE "else"
 %nonassoc ELSE
 %token WHILE "while"
@@ -58,7 +57,7 @@ block:
   | error {
     print_endline "block -> ERROR";
     Params.errcount := !Params.errcount + 1;
-    Printf.printf "\nError from %d:%d to %d:%d: Not a block or statement\n\n" $startpos.pos_lnum $startpos.pos_bol $endpos.pos_lnum $endpos.pos_bol
+    Printf.printf "\nError from %d:%d to %d:%d: Not a block or statement\n\n" $startpos.pos_lnum ($startpos.pos_cnum - $startpos.pos_bol) $endpos.pos_lnum ($endpos.pos_cnum - $endpos.pos_bol)
   }
 
 decl:
@@ -76,11 +75,6 @@ stmt:
   | "do"; stmt; "while"; "("; bool; ")"; ";"  { print_endline "stmt -> do stmt while ( bool ) ;" }
   | "break"; ";"                              { print_endline "stmt -> break ;" }
   | block                                     { print_endline "stmt -> block" }
-  | error {
-    print_endline "stmt -> ERROR";
-    Params.errcount := !Params.errcount + 1;
-    Printf.printf "\nError from %d:%d to %d:%d: Not a block or statement\n\n" $startpos.pos_lnum $startpos.pos_bol $endpos.pos_lnum $endpos.pos_bol
-  }
 
 (*stmt_if:
   | stmt; "else"; stmt { print_endline "stmt_if -> stmt else stmt" }
@@ -132,13 +126,3 @@ factor:
   | REAL            { print_endline "factor -> real" }
   | "true"          { print_endline "factor -> true" }
   | "false"         { print_endline "factor -> false" }
-  | "("; ")" {
-    (* Required to prevent infinite loop *)
-    Params.errcount := !Params.errcount + 1;
-    print_endline "factor -> ERROR\n\nError: Parens are empty\n\n";
-  }
-  | error {
-    print_endline "factor -> ERROR";
-    Params.errcount := !Params.errcount + 1;
-    Printf.printf "\nError from %d:%d to %d:%d: Not a value\n\n" $startpos.pos_lnum $startpos.pos_bol $endpos.pos_lnum $endpos.pos_bol
-  }
