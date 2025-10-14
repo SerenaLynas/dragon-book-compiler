@@ -59,5 +59,5 @@ let _ = try Parser.program Lexer.lex lexbuf with
 if !Params.errcount = 0 then
   Printf.printf "\n\nParsing completed successfully.\n\n"
 else
-  Printf.printf "\n\nParsing failed with %d error(s)\n\n" !Params.errcount;
-  exit(1)
+  (Printf.printf "\n\nParsing failed with %d error(s)\n\n" !Params.errcount;
+  exit(1))
