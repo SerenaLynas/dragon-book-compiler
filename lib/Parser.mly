@@ -51,10 +51,15 @@
 
 program:
   | block { print_endline "program -> block" }
+  | error {
+    print_endline "program -> ERROR";
+    Params.errcount := !Params.errcount + 1;
+    Printf.printf "\nFailed to parse program"
+  }
 
 block:
   | "{"; decl*; stmt*; "}" { print_endline "block -> { decl* stmt* }"}
-  | error {
+  | "{"; error {
     print_endline "block -> ERROR";
     Params.errcount := !Params.errcount + 1;
     Printf.printf "\nError from %d:%d to %d:%d: Not a block or statement\n\n" $startpos.pos_lnum ($startpos.pos_cnum - $startpos.pos_bol) $endpos.pos_lnum ($endpos.pos_cnum - $endpos.pos_bol)
