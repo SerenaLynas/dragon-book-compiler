@@ -4,3 +4,8 @@
  (public_name main)
  (name main)
  (libraries compiler_lib))
+
+(executable
+ (public_name test)
+ (name test)
+ (libraries compiler_lib))

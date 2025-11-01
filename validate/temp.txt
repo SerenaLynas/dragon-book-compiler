@@ -1,0 +1,16 @@
+{
+    int i;
+    int j;
+    int k;
+    int x;
+    int y;
+    int z;
+    int[10] arr;
+    arr[6] = 0;
+    i = 1;
+    j = 2;
+    k = 3;
+    x = 4;
+    y = 5;
+    z = arr[y + i] + ((i * 2) / 3);
+}

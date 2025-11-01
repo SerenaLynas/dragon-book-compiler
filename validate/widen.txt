@@ -1,0 +1,11 @@
+{
+    int i;
+    int j;
+    i = 1;
+    j = 2;
+    {
+        float j;
+        j = i + j;
+    }
+    j = 1 + 2;
+}
