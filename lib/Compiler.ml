@@ -22,13 +22,20 @@ type symbol = {
 let string_of_symbol (symbol : symbol) =
   Printf.sprintf "%s (%#010x) : %s" (string_of_ident symbol.ident) symbol.stack_addr (string_of_ty symbol.ty)
 
-class env prev stack_addr =
+class env (prev: env option) =
   object (self)
     val mutable symbols : (ident, symbol) Hashtbl.t = Hashtbl.create 16
     val mutable temp_counter = 0
-    val mutable stack_addr = stack_addr
+    val start_of_record_stack_addr : int = (match prev with
+      | Some prev -> prev#stack_addr
+      | None -> 0
+    )
+    val mutable stack_addr : int = (match prev with
+      | Some prev -> prev#stack_addr
+      | None -> 0
+    )
     method stack_addr = stack_addr
-    method parent =
+    method parent : env =
       match prev with
       | Some prev -> prev
       | None -> (self :> env)
@@ -71,6 +78,15 @@ class env prev stack_addr =
         e#print
       | None ->
         Printf.printf "}\n\n"
+    method variable_offset (ident : ident) =
+      let record = Hashtbl.find symbols ident in
+      record.stack_addr - start_of_record_stack_addr
+    method activation_record_length =
+      stack_addr - start_of_record_stack_addr
+    method base_addr =
+      start_of_record_stack_addr
+    method variable_address (ident : ident) =
+      (self#variable_offset ident) + self#base_addr 
   end
 
 type addr =
@@ -128,38 +144,70 @@ let string_of_binary_ir ir = match ir with
   | GT -> " > "
   | GTEQ -> " >= "
 
-type ir =
+(* First: which irc block it is. Second int: line in the block. *)
+type 'irc ir_label' =
+  | LABEL_TO_BLOCK of 'irc * int
+  | LABEL_TO_ADDR of int
+
+let string_of_label label = match label with
+  | LABEL_TO_BLOCK (irc, int) -> "[ irc block " ^ string_of_int irc#id ^ ", addr " ^ string_of_int int ^ " ]"
+  | LABEL_TO_ADDR (addr) -> "[ addr: " ^ string_of_int addr ^ " ]"
+
+type 'irc ir' =
   | UNARY of unary_ir * ident * ident
   | BINARY of binary_ir * ident * ident * ident
-  | LOAD of ident * constant
+  | LOAD_CONST of ident * constant
   | LOAD_IDX of ident * ident * ident
   | TYPE_ERROR of ident
+  | IF_THEN of ident * 'irc ir_label'
+  | GOTO of 'irc ir_label'
 
 let string_of_ir ir = match ir with
   | UNARY (unary_ir, dst, src) ->
     string_of_ident dst ^ " = " ^ (string_of_unary_ir unary_ir) ^ string_of_ident src
   | BINARY (binary_ir, dst, src1, src2) ->
     string_of_ident dst ^ " = " ^ string_of_ident src1 ^ (string_of_binary_ir binary_ir) ^ string_of_ident src2
-  | LOAD (ident, const) ->
+  | LOAD_CONST (ident, const) ->
     string_of_ident ident ^ " = " ^ short_string_of_constant const ^ " (load constant)"
   | LOAD_IDX (dst, list, idx) ->
     string_of_ident dst ^ " = " ^ string_of_ident list ^ "[" ^ string_of_ident idx ^ "]"
   | TYPE_ERROR (ident) ->
     "TYPE ERROR of " ^ string_of_ident ident
+  | IF_THEN (cond, label) -> "if " ^ string_of_ident cond ^ " goto " ^ string_of_label label
+  | GOTO (label) -> "goto " ^ string_of_label label
 
+let irc_counter = ref 1
 class irc =
-  object
+  object (self)
+    val id =
+      let n = irc_counter.contents in (irc_counter := n + 1; n)
     val mutable code = []
-    method append (ir: ir) =
+    val mutable children = []
+    method id = id
+    method code = code
+    method append (ir: irc ir') =
       code <- ir :: code;
       print_endline @@ string_of_ir ir
     method print: unit =
-      print_endline "\nir code\n---";
-      let _ = (let rev = List.rev code in
-      let f x = print_endline @@ string_of_ir x in
-      List.map f rev) in ();
-      print_endline "==="
+      print_endline @@ "\nir code block " ^ string_of_int id ^ "\n---";
+      let rev = List.rev code in
+      let f i x = print_endline @@ string_of_int i ^ " | " ^ string_of_ir x in
+      let _ = List.mapi f rev in ();
+      print_endline "===";
+      let f x = x#print in
+      let _ = List.map f children in ()
+    method start_label = LABEL_TO_BLOCK (self, 0)
+    method end_label = LABEL_TO_BLOCK (self, List.length code)
+    method append_child_irc (irc: irc) =
+      children <- irc :: children
+    method children = children
+    method all_ircs : irc list =
+      let f (c : irc) = c#all_ircs in
+      (self :> irc) :: List.concat (List.map f children)
   end
+
+type ir_label = irc ir_label'
+type ir = irc ir'
 
 let prod list =
   List.fold_left ( * ) 1 list
@@ -192,7 +240,7 @@ let rec codegen_ir_loc_impl (env: env) (irc: irc) (id: ident) (idx: ident list) 
       dim = []
     } in
     let mult = env#put_temp ty in
-    irc#append (LOAD (size, CONSTANT_INT (size_of_ty ty)));
+    irc#append (LOAD_CONST (size, CONSTANT_INT (size_of_ty ty)));
     irc#append (BINARY (MUL, mult, size, id));
     let dst = env#put_temp ty in
     irc#append (LOAD_IDX (dst, id, x));
@@ -211,7 +259,7 @@ let rec codegen_ir_loc_impl (env: env) (irc: irc) (id: ident) (idx: ident list) 
       basic = INT;
       dim = [];
     } in (
-    irc#append (LOAD (width, CONSTANT_INT xsize));
+    irc#append (LOAD_CONST (width, CONSTANT_INT xsize));
     irc#append (BINARY (MUL, multiplied, y, width));
     irc#append (BINARY (ADD, added, multiplied, x));
     codegen_ir_loc_impl env irc id (added :: rest) {
@@ -258,17 +306,17 @@ and codegen_ir_expr (env: env) (irc: irc) (expr: expr) = match expr with
   | Ast.LIT_INT int ->
     let ty = { basic = INT; dim = []; } in
     let ident = env#put_temp ty in
-    irc#append (LOAD (ident, CONSTANT_INT int));
+    irc#append (LOAD_CONST (ident, CONSTANT_INT int));
     (ident, ty)
   | Ast.LIT_FLOAT float ->
     let ty = { basic = FLOAT; dim = []; } in
     let ident = env#put_temp ty in
-    irc#append (LOAD (ident, CONSTANT_FLOAT float));
+    irc#append (LOAD_CONST (ident, CONSTANT_FLOAT float));
     (ident, ty)
   | Ast.LIT_BOOL bool ->
     let ty = { basic = BOOLEAN; dim = []; } in
     let ident = env#put_temp ty in
-    irc#append (LOAD (ident, CONSTANT_BOOLEAN bool));
+    irc#append (LOAD_CONST (ident, CONSTANT_BOOLEAN bool));
     (ident, ty)
   | Ast.LOC loc -> 
     let id = NAMED loc.id in
@@ -287,18 +335,29 @@ let rec codegen_ir_stmt (env: env) (irc: irc) (stmt: stmt) = match stmt with
     irc#append (UNARY (MOV, loc, expr))
   | IF (cond, then_stmt, else_stmt) ->
     let (cond, _) = codegen_ir_expr env irc cond in
-    (* todo: integrate branching *)
-    codegen_ir_stmt env irc then_stmt;
+    let then_irc = new irc in
+    let then_label = then_irc#start_label in
+    irc#append @@ IF_THEN (cond, then_label);
+    let then_env = new env @@ Some env in
+    codegen_ir_stmt then_env then_irc then_stmt;
+    let else_env = new env @@ Some env in
     (match else_stmt with
-      | Some else_stmt -> codegen_ir_stmt env irc else_stmt
-      | None -> ())
+      | Some else_stmt -> codegen_ir_stmt else_env irc else_stmt
+      | None -> ());
+    let end_of_entire_stmt_label = irc#end_label in
+    then_irc#append @@ GOTO end_of_entire_stmt_label;
+    irc#append_child_irc then_irc
   | WHILE (cond, then_stmt) ->
+    let return_label = irc#end_label in
     let (cond, _) = codegen_ir_expr env irc cond in
-    (* todo: integrate branching *)
-    codegen_ir_stmt env irc then_stmt
+    let then_irc = new irc in
+    codegen_ir_stmt env then_irc then_stmt;
+    then_irc#append @@ GOTO return_label;
+    irc#append @@ IF_THEN (cond, then_irc#start_label);
+    irc#append_child_irc then_irc
   | BREAK -> ()
   | BLOCK (decls, stmts) ->
-    let env = new env (Some env) env#stack_addr in
+    let env = new env @@ Some env in
     let g (decl : decl) = (match decl with
       | DECL (id, ty) -> env#put id ty) in
     let _ = List.map g decls in

@@ -1,0 +1,14 @@
+{
+    int a;
+    int b;
+    a = 1;
+    b = a + 2;
+    if (a > b) {
+        int c;
+        c = 1;
+    } else {
+        float d;
+        d = 2.0;
+    }
+    a = 10;
+}

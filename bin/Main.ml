@@ -12,7 +12,7 @@ let program = try Parser.program Lexer.lex lexbuf with
     exit(1);;
 
 let code =
-  let env = new env None 0 in
+  let env = new env None in
   let irc = new irc in
   codegen_ir_stmt env irc program;
   irc#print;
