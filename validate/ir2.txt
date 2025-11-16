@@ -1,6 +1,5 @@
 {
-    int a;
-    float b;
-    a = 1;
-    b = a;
+    int[2][3] i;
+    int j;
+    j = i[1][1];
 }
