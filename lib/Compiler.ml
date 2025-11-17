@@ -158,6 +158,7 @@ type 'irc ir' =
   | BINARY of binary_ir * ident * ident * ident
   | LOAD_CONST of ident * constant
   | LOAD_IDX of ident * ident * ident
+  | STORE_IDX of ident * ident * ident
   | TYPE_ERROR of ident
   | IF_THEN of ident * 'irc ir_label'
   | GOTO of 'irc ir_label'
@@ -171,6 +172,8 @@ let string_of_ir ir = match ir with
     string_of_ident ident ^ " = " ^ short_string_of_constant const ^ " (load constant)"
   | LOAD_IDX (dst, list, idx) ->
     string_of_ident dst ^ " = " ^ string_of_ident list ^ "[" ^ string_of_ident idx ^ "]"
+  | STORE_IDX (dst, idx, src) ->
+    string_of_ident dst ^ "[" ^ string_of_ident idx ^ "]" ^ " = " ^ string_of_ident src
   | TYPE_ERROR (ident) ->
     "TYPE ERROR of " ^ string_of_ident ident
   | IF_THEN (cond, label) -> "if " ^ string_of_ident cond ^ " goto " ^ string_of_label label
@@ -228,8 +231,9 @@ let coerce_ty (env: env) (irc: irc) ident ty =
       let (ident, _) = widen env irc ident ty.dim in ident
     else (irc#append (TYPE_ERROR ident); ident)
 
-let rec codegen_ir_loc_impl (env: env) (irc: irc) (id: ident) (idx: ident list) (ty: ty) = match idx with
-  | [] -> (id, ty)
+(* returns the idx of the access *)
+let rec codegen_ir_arr_loc_idx (env: env) (irc: irc) (id: ident) (idx: ident list) (ty: ty): (ident * ty) option = match idx with
+  | [] -> None
   | [x] ->
     let ty = {
       basic = ty.basic;
@@ -241,12 +245,10 @@ let rec codegen_ir_loc_impl (env: env) (irc: irc) (id: ident) (idx: ident list) 
     } in
     let mult = env#put_temp ty in
     irc#append (LOAD_CONST (size, CONSTANT_INT (size_of_ty ty)));
-    irc#append (BINARY (MUL, mult, size, id));
-    let dst = env#put_temp ty in
-    irc#append (LOAD_IDX (dst, id, x));
-    (dst, ty)
+    irc#append (BINARY (MUL, mult, size, x));
+    Some (mult, ty)
   | x :: y :: rest ->
-    let xsize :: ysize :: restsize = ty.dim in
+    let[@warning "-8"] xsize :: ysize :: restsize = ty.dim in
     let width = env#put_temp {
       basic = INT;
       dim = [];
@@ -262,10 +264,16 @@ let rec codegen_ir_loc_impl (env: env) (irc: irc) (id: ident) (idx: ident list) 
     irc#append (LOAD_CONST (width, CONSTANT_INT xsize));
     irc#append (BINARY (MUL, multiplied, y, width));
     irc#append (BINARY (ADD, added, multiplied, x));
-    codegen_ir_loc_impl env irc id (added :: rest) {
+    codegen_ir_arr_loc_idx env irc id (added :: rest) {
       basic = ty.basic;
       dim = (xsize * ysize) :: restsize
     })
+
+let rec drop n lst =
+  if n <= 0 then lst
+  else match lst with
+    | [] -> []
+    | _ :: tl -> drop (n - 1) tl
 
 let rec codegen_ir_unary (env: env) (irc: irc) (op: unary_ir) (expr: expr) =
   let (ident, ty) = codegen_ir_expr env irc expr in
@@ -325,14 +333,27 @@ and codegen_ir_expr (env: env) (irc: irc) (expr: expr) = match expr with
       let (ident, _) = codegen_ir_expr env irc expr in ident
     in
     let idx = List.map f loc.idx in
-    codegen_ir_loc_impl env irc id idx ty
+    match codegen_ir_arr_loc_idx env irc id idx ty with
+      | Some (id_ident, ty) ->
+        let dst = env#put_temp ty in
+        irc#append (LOAD_IDX (dst, id, id_ident));
+        (dst, ty)
+      | None ->
+        (id, ty)
 
 let rec codegen_ir_stmt (env: env) (irc: irc) (stmt: stmt) = match stmt with
   | ASSIGN (loc, expr) ->
-    let (loc, loc_ty) = codegen_ir_expr env irc (Ast.LOC loc) in
-    let (expr, expr_ty) = codegen_ir_expr env irc expr in
-    let expr = coerce_ty env irc expr loc_ty in
-    irc#append (UNARY (MOV, loc, expr))
+    let loc_symb = Option.get @@ env#get (NAMED loc.id) in
+    let f x = (let (ident, _) = codegen_ir_expr env irc x in ident) in
+    let idx_ident = codegen_ir_arr_loc_idx env irc (NAMED loc.id) (List.map f loc.idx) loc_symb.ty in
+    let (expr, _) = codegen_ir_expr env irc expr in
+    (match idx_ident with
+      | Some (idx_ident, idx_ty) ->
+        let expr = coerce_ty env irc expr idx_ty in
+        irc#append (STORE_IDX (loc_symb.ident, idx_ident, expr))
+      | None ->
+        let expr = coerce_ty env irc expr loc_symb.ty in
+        irc#append (UNARY (MOV, loc_symb.ident, expr)))
   | IF (cond, then_stmt, else_stmt) ->
     let (cond, _) = codegen_ir_expr env irc cond in
     let then_irc = new irc in
