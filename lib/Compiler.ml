@@ -266,9 +266,9 @@ let rec codegen_ir_arr_loc_idx (env: env) (irc: irc) (id: ident) (idx: ident lis
       basic = INT;
       dim = [];
     } in (
-    irc#append (LOAD_CONST (width, CONSTANT_INT xsize));
-    irc#append (BINARY (MUL, multiplied, env#get y |> Option.get, width));
-    irc#append (BINARY (ADD, added, multiplied, env#get x |> Option.get));
+    irc#append (LOAD_CONST (width, CONSTANT_INT ysize));
+    irc#append (BINARY (MUL, multiplied, env#get x |> Option.get, width));
+    irc#append (BINARY (ADD, added, multiplied, env#get y |> Option.get));
     codegen_ir_arr_loc_idx env irc id (added.ident :: rest) {
       basic = ty.basic;
       dim = (xsize * ysize) :: restsize
