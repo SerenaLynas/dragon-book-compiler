@@ -49,17 +49,18 @@ class env (prev: env option) =
       stack_addr <- stack_addr + size_of_ty ty;
       Printf.printf "env <- %s\n" id;
       ident
-    method put_temp (ty : ty) =
+    method put_temp (ty : ty) : symbol =
       let count = temp_counter in (let ident = TEMPORARY count in (
-        temp_counter <- temp_counter + 1;
-        Hashtbl.add symbols ident {
+        let symbol = {
           stack_addr = stack_addr;
           ident = ident;
           ty = ty;
-        };
+        } in
+        temp_counter <- temp_counter + 1;
+        Hashtbl.add symbols ident symbol;
         stack_addr <- stack_addr + size_of_ty ty;
         Printf.printf "env <- %s\n" @@ string_of_ident ident;
-        ident
+        symbol
       ))
     method get (ident : ident) : symbol option =
       Printf.printf "env -> %s\n" @@ string_of_ident ident;
@@ -154,29 +155,32 @@ let string_of_label label = match label with
   | LABEL_TO_ADDR (addr) -> "[ addr: " ^ string_of_int addr ^ " ]"
 
 type 'irc ir' =
-  | UNARY of unary_ir * ident * ident
-  | BINARY of binary_ir * ident * ident * ident
-  | LOAD_CONST of ident * constant
-  | LOAD_IDX of ident * ident * ident
-  | STORE_IDX of ident * ident * ident
-  | TYPE_ERROR of ident
-  | IF_THEN of ident * 'irc ir_label'
+  | UNARY of unary_ir * symbol * symbol
+  | BINARY of binary_ir * symbol * symbol * symbol
+  | LOAD_CONST of symbol * constant
+  | LOAD_IDX of symbol * symbol * symbol
+  | STORE_IDX of symbol * symbol * symbol
+  | TYPE_ERROR of symbol
+  | IF_THEN of symbol * 'irc ir_label'
   | GOTO of 'irc ir_label'
+
+let string_of_ir_symbol (s: symbol) =
+  Printf.sprintf "(%#06x %s)" s.stack_addr (string_of_ident s.ident)
 
 let string_of_ir ir = match ir with
   | UNARY (unary_ir, dst, src) ->
-    string_of_ident dst ^ " = " ^ (string_of_unary_ir unary_ir) ^ string_of_ident src
+    string_of_ir_symbol dst ^ " = " ^ (string_of_unary_ir unary_ir) ^ string_of_ir_symbol src
   | BINARY (binary_ir, dst, src1, src2) ->
-    string_of_ident dst ^ " = " ^ string_of_ident src1 ^ (string_of_binary_ir binary_ir) ^ string_of_ident src2
+    string_of_ir_symbol dst ^ " = " ^ string_of_ir_symbol src1 ^ (string_of_binary_ir binary_ir) ^ string_of_ir_symbol src2
   | LOAD_CONST (ident, const) ->
-    string_of_ident ident ^ " = " ^ short_string_of_constant const ^ " (load constant)"
+    string_of_ir_symbol ident ^ " = " ^ short_string_of_constant const ^ " (load constant)"
   | LOAD_IDX (dst, list, idx) ->
-    string_of_ident dst ^ " = " ^ string_of_ident list ^ "[" ^ string_of_ident idx ^ "]"
+    string_of_ir_symbol dst ^ " = " ^ string_of_ir_symbol list ^ "[" ^ string_of_ir_symbol idx ^ "]"
   | STORE_IDX (dst, idx, src) ->
-    string_of_ident dst ^ "[" ^ string_of_ident idx ^ "]" ^ " = " ^ string_of_ident src
+    string_of_ir_symbol dst ^ "[" ^ string_of_ir_symbol idx ^ "]" ^ " = " ^ string_of_ir_symbol src
   | TYPE_ERROR (ident) ->
-    "TYPE ERROR of " ^ string_of_ident ident
-  | IF_THEN (cond, label) -> "if " ^ string_of_ident cond ^ " goto " ^ string_of_label label
+    "TYPE ERROR of " ^ string_of_ir_symbol ident
+  | IF_THEN (cond, label) -> "if " ^ string_of_ir_symbol cond ^ " goto " ^ string_of_label label
   | GOTO (label) -> "goto " ^ string_of_label label
 
 let irc_counter = ref 1
@@ -215,21 +219,22 @@ type ir = irc ir'
 let prod list =
   List.fold_left ( * ) 1 list
 
-let widen (env: env) (irc: irc) ident dim =
+let widen (env: env) (irc: irc) symbol dim =
   let ty = {
     basic = FLOAT;
     dim = dim;
   } in
   let dst = env#put_temp ty in
-  irc#append (UNARY (WIDEN, dst, ident));
+  irc#append (UNARY (WIDEN, dst, symbol));
   (dst, ty)
 
 let coerce_ty (env: env) (irc: irc) ident ty =
-  let sty = (env#get ident |> Option.get).ty in
+  let symbol = env#get ident |> Option.get in
+  let sty = symbol.ty in
   if sty = ty then ident else
     if sty.dim = ty.dim && sty.basic = INT && ty.basic = FLOAT then
-      let (ident, _) = widen env irc ident ty.dim in ident
-    else (irc#append (TYPE_ERROR ident); ident)
+      let (symbol2, _) = widen env irc symbol ty.dim in symbol2.ident
+    else (irc#append (TYPE_ERROR symbol); ident)
 
 (* returns the idx of the access *)
 let rec codegen_ir_arr_loc_idx (env: env) (irc: irc) (id: ident) (idx: ident list) (ty: ty): (ident * ty) option = match idx with
@@ -245,8 +250,8 @@ let rec codegen_ir_arr_loc_idx (env: env) (irc: irc) (id: ident) (idx: ident lis
     } in
     let mult = env#put_temp ty in
     irc#append (LOAD_CONST (size, CONSTANT_INT (size_of_ty ty)));
-    irc#append (BINARY (MUL, mult, size, x));
-    Some (mult, ty)
+    irc#append (BINARY (MUL, mult, size, env#get x |> Option.get));
+    Some (mult.ident, ty)
   | x :: y :: rest ->
     let[@warning "-8"] xsize :: ysize :: restsize = ty.dim in
     let width = env#put_temp {
@@ -262,9 +267,9 @@ let rec codegen_ir_arr_loc_idx (env: env) (irc: irc) (id: ident) (idx: ident lis
       dim = [];
     } in (
     irc#append (LOAD_CONST (width, CONSTANT_INT xsize));
-    irc#append (BINARY (MUL, multiplied, y, width));
-    irc#append (BINARY (ADD, added, multiplied, x));
-    codegen_ir_arr_loc_idx env irc id (added :: rest) {
+    irc#append (BINARY (MUL, multiplied, env#get y |> Option.get, width));
+    irc#append (BINARY (ADD, added, multiplied, env#get x |> Option.get));
+    codegen_ir_arr_loc_idx env irc id (added.ident :: rest) {
       basic = ty.basic;
       dim = (xsize * ysize) :: restsize
     })
@@ -333,27 +338,27 @@ and codegen_ir_expr (env: env) (irc: irc) (expr: expr) = match expr with
       let (ident, _) = codegen_ir_expr env irc expr in ident
     in
     let idx = List.map f loc.idx in
-    match codegen_ir_arr_loc_idx env irc id idx ty with
+    match codegen_ir_arr_loc_idx env irc id (let f s = s.ident in List.map f idx) ty with
       | Some (id_ident, ty) ->
         let dst = env#put_temp ty in
-        irc#append (LOAD_IDX (dst, id, id_ident));
+        irc#append (LOAD_IDX (dst, env#get id |> Option.get, env#get id_ident |> Option.get));
         (dst, ty)
       | None ->
-        (id, ty)
+        (env#get id |> Option.get, ty)
 
 let rec codegen_ir_stmt (env: env) (irc: irc) (stmt: stmt) = match stmt with
   | ASSIGN (loc, expr) ->
     let loc_symb = Option.get @@ env#get (NAMED loc.id) in
-    let f x = (let (ident, _) = codegen_ir_expr env irc x in ident) in
+    let f x = (let (symbol, _) = codegen_ir_expr env irc x in symbol.ident) in
     let idx_ident = codegen_ir_arr_loc_idx env irc (NAMED loc.id) (List.map f loc.idx) loc_symb.ty in
     let (expr, _) = codegen_ir_expr env irc expr in
     (match idx_ident with
       | Some (idx_ident, idx_ty) ->
-        let expr = coerce_ty env irc expr idx_ty in
-        irc#append (STORE_IDX (loc_symb.ident, idx_ident, expr))
+        let expr = coerce_ty env irc expr.ident idx_ty in
+        irc#append (STORE_IDX (loc_symb, env#get idx_ident |> Option.get, env#get expr |> Option.get))
       | None ->
-        let expr = coerce_ty env irc expr loc_symb.ty in
-        irc#append (UNARY (MOV, loc_symb.ident, expr)))
+        let expr = coerce_ty env irc expr.ident loc_symb.ty in
+        irc#append (UNARY (MOV, loc_symb, env#get expr |> Option.get)))
   | IF (cond, then_stmt, else_stmt) ->
     let (cond, _) = codegen_ir_expr env irc cond in
     let then_irc = new irc in
